@@ -215,13 +215,31 @@ void cursor_send_pointer_motion(struct sway_cursor *cursor, uint32_t time_msec,
 	}
 }
 
+static bool is_pointed_container_changed(struct sway_cursor *cursor,
+		double prev_x, double prev_y) {
+	struct wlr_surface *surface = NULL;
+	double sx, sy;
+	struct sway_container *prev_c  = container_at_coords(cursor->seat,
+			prev_x, prev_y, &surface, &sx, &sy);
+
+	struct sway_container *cur_c  = container_at_coords(cursor->seat,
+			cursor->cursor->x, cursor->cursor->y, &surface, &sx, &sy);
+	return prev_c != cur_c;
+}
+
 static void handle_cursor_motion(struct wl_listener *listener, void *data) {
 	struct sway_cursor *cursor = wl_container_of(listener, cursor, motion);
 	wlr_idle_notify_activity(cursor->seat->input->server->idle, cursor->seat->wlr_seat);
 	struct wlr_event_pointer_motion *event = data;
+
+	double prev_x = cursor->cursor->x, prev_y = cursor->cursor->y;
 	wlr_cursor_move(cursor->cursor, event->device,
 		event->delta_x, event->delta_y);
-	cursor_send_pointer_motion(cursor, event->time_msec, true);
+	// If focus_follows_mouse is enabled, focus should only be changed
+	// when the mouse crosses window borders.
+	bool allow_refocusing = is_pointed_container_changed(cursor, prev_x, prev_y);
+
+	cursor_send_pointer_motion(cursor, event->time_msec, allow_refocusing);
 }
 
 static void handle_cursor_motion_absolute(
@@ -230,8 +248,14 @@ static void handle_cursor_motion_absolute(
 		wl_container_of(listener, cursor, motion_absolute);
 	wlr_idle_notify_activity(cursor->seat->input->server->idle, cursor->seat->wlr_seat);
 	struct wlr_event_pointer_motion_absolute *event = data;
+
+	double prev_x = cursor->cursor->x, prev_y = cursor->cursor->y;
 	wlr_cursor_warp_absolute(cursor->cursor, event->device, event->x, event->y);
-	cursor_send_pointer_motion(cursor, event->time_msec, true);
+	// If focus_follows_mouse is enabled, focus should only be changed
+	// when the mouse crosses window borders.
+	bool allow_refocusing = is_pointed_container_changed(cursor, prev_x, prev_y);
+
+	cursor_send_pointer_motion(cursor, event->time_msec, allow_refocusing);
 }
 
 void dispatch_cursor_button(struct sway_cursor *cursor,
